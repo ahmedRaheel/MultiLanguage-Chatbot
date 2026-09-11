@@ -1,5 +1,3 @@
-import { getAccessToken } from "./auth";
-
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 export type UserRole = "admin" | "user";
@@ -9,6 +7,20 @@ export type CurrentUser = {
   username: string;
   role: UserRole;
   is_active: boolean;
+};
+
+export type LoginRequest = {
+  username: string;
+  password: string;
+};
+
+export type RegisterRequest = {
+  first_name: string;
+  last_name: string;
+  username: string;
+  email: string;
+  password: string;
+  confirm_password: string;
 };
 
 export type Source = {
@@ -37,38 +49,102 @@ export type KnowledgeDocument = {
   created_at: string;
 };
 
-async function authenticatedHeaders(extra?: HeadersInit): Promise<HeadersInit> {
-  const token = await getAccessToken();
-
-  return {
-    Authorization: `Bearer ${token}`,
-    ...extra,
-  };
-}
-
-async function ensureSuccessfulResponse(response: Response): Promise<Response> {
-  if (response.ok) {
-    return response;
-  }
-
+async function readError(response: Response): Promise<string> {
   let message = `Request failed (${response.status})`;
-
   try {
     const body = await response.json();
-    message = body.detail || message;
+    if (typeof body.detail === "string") {
+      message = body.detail;
+    } else if (Array.isArray(body.detail)) {
+      message = body.detail.map((item: { msg?: string }) => item.msg).filter(Boolean).join(" · ") || message;
+    }
   } catch {
-    // Keep the status-based fallback message.
+    // Keep the HTTP status fallback when the API does not return JSON.
   }
-
-  throw new Error(message);
+  return message;
 }
 
-export async function getCurrentUser(): Promise<CurrentUser> {
-  const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
-    headers: await authenticatedHeaders(),
+async function apiFetch(path: string, init: RequestInit = {}, retry = true): Promise<Response> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    credentials: "include",
   });
 
-  await ensureSuccessfulResponse(response);
+  if (response.status === 401 && retry && !path.startsWith("/api/auth/")) {
+    const refreshed = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+    });
+
+    if (refreshed.ok) {
+      return apiFetch(path, init, false);
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return response;
+}
+
+export async function login(request: LoginRequest): Promise<CurrentUser> {
+  const response = await apiFetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  }, false);
+
+  const body = await response.json();
+  return body.user;
+}
+
+export async function register(request: RegisterRequest): Promise<CurrentUser> {
+  const response = await apiFetch("/api/auth/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  }, false);
+
+  const body = await response.json();
+  return body.user;
+}
+
+export async function logout(): Promise<void> {
+  await fetch(`${API_BASE_URL}/api/auth/logout`, {
+    method: "POST",
+    credentials: "include",
+  });
+}
+
+export async function getCurrentUser(): Promise<CurrentUser | null> {
+  const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
+    credentials: "include",
+  });
+
+  if (response.status === 401) {
+    const refreshed = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+    });
+
+    if (!refreshed.ok) {
+      return null;
+    }
+
+    const retry = await fetch(`${API_BASE_URL}/api/auth/me`, {
+      credentials: "include",
+    });
+
+    if (retry.status === 401) return null;
+    if (!retry.ok) throw new Error(await readError(retry));
+    return retry.json();
+  }
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
   return response.json();
 }
 
@@ -78,11 +154,9 @@ export async function sendChat(
   language: string,
   useKnowledgeBase: boolean,
 ): Promise<ChatReply> {
-  const response = await fetch(`${API_BASE_URL}/api/chat`, {
+  const response = await apiFetch("/api/chat", {
     method: "POST",
-    headers: await authenticatedHeaders({
-      "Content-Type": "application/json",
-    }),
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       message,
       conversation_id: conversationId,
@@ -91,40 +165,23 @@ export async function sendChat(
     }),
   });
 
-  await ensureSuccessfulResponse(response);
   return response.json();
 }
 
 export async function uploadDocument(file: File): Promise<KnowledgeDocument> {
   const formData = new FormData();
   formData.append("file", file);
-
-  const response = await fetch(`${API_BASE_URL}/api/documents`, {
-    method: "POST",
-    headers: await authenticatedHeaders(),
-    body: formData,
-  });
-
-  await ensureSuccessfulResponse(response);
+  const response = await apiFetch("/api/documents", { method: "POST", body: formData });
   return response.json();
 }
 
 export async function getDocuments(): Promise<KnowledgeDocument[]> {
-  const response = await fetch(`${API_BASE_URL}/api/documents`, {
-    headers: await authenticatedHeaders(),
-  });
-
-  await ensureSuccessfulResponse(response);
+  const response = await apiFetch("/api/documents");
   return response.json();
 }
 
 export async function deleteDocument(documentId: string): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/api/documents/${documentId}`, {
-    method: "DELETE",
-    headers: await authenticatedHeaders(),
-  });
-
-  await ensureSuccessfulResponse(response);
+  await apiFetch(`/api/documents/${documentId}`, { method: "DELETE" });
 }
 
 export async function transcribeAudio(
@@ -133,17 +190,11 @@ export async function transcribeAudio(
 ): Promise<{ text: string; language: string | null }> {
   const formData = new FormData();
   formData.append("file", blob, "speech.webm");
+  if (language) formData.append("language", language.split("-")[0]);
 
-  if (language) {
-    formData.append("language", language.split("-")[0]);
-  }
-
-  const response = await fetch(`${API_BASE_URL}/api/speech/transcribe`, {
+  const response = await apiFetch("/api/speech/transcribe", {
     method: "POST",
-    headers: await authenticatedHeaders(),
     body: formData,
   });
-
-  await ensureSuccessfulResponse(response);
   return response.json();
 }

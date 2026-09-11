@@ -1,3 +1,4 @@
+
 services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.7.3
@@ -24,6 +25,59 @@ services:
     networks:
       - chatbot-network
 
+  backend:
+    build:
+      context: ./backend
+
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres123@postgres:5432/chatbot
+
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      OLLAMA_CHAT_MODEL: llama3.2:3b
+      OLLAMA_EMBED_MODEL: all-minilm
+      EMBEDDING_DIMENSION: 384
+
+      TOP_K: 5
+      CHUNK_SIZE: 1200
+      CHUNK_OVERLAP: 200
+      MAX_UPLOAD_MB: 25
+      CACHE_SIMILARITY_THRESHOLD: 0.94
+
+      KEYCLOAK_PUBLIC_URL: http://localhost:8080
+      KEYCLOAK_INTERNAL_URL: http://keycloak:8080
+      KEYCLOAK_REALM: polyglot
+
+      CORS_ORIGINS: http://localhost:5173
+
+    ports:
+      - "8000:8000"
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    depends_on:
+      - keycloak
+
+    networks:
+      - chatbot-network
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: http://localhost:8000
+
+    ports:
+      - "5173:80"
+
+    depends_on:
+      - backend
+
+    networks:
+      - chatbot-network
+
+
 networks:
   chatbot-network:
     external: true
+

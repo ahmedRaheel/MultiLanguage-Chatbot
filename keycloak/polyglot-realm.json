@@ -1,0 +1,56 @@
+{
+  "realm": "polyglot",
+  "enabled": true,
+  "displayName": "Polyglot Knowledge AI",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "rememberMe": true,
+  "roles": {
+    "realm": [
+      { "name": "user", "description": "Standard chatbot user" },
+      { "name": "admin", "description": "Knowledge-base administrator" }
+    ]
+  },
+  "defaultRoles": ["user"],
+  "clients": [
+    {
+      "clientId": "polyglot-bff",
+      "name": "Polyglot FastAPI BFF",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "change-this-bff-secret",
+      "protocol": "openid-connect",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "implicitFlowEnabled": false,
+      "fullScopeAllowed": true
+    }
+  ],
+  "users": [
+    {
+      "username": "app-admin",
+      "enabled": true,
+      "email": "admin@polyglot.local",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "ChangeMe123!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["admin"]
+    },
+    {
+      "username": "service-account-polyglot-bff",
+      "enabled": true,
+      "serviceAccountClientId": "polyglot-bff",
+      "clientRoles": {
+        "realm-management": ["manage-users", "view-users", "query-users", "view-realm"]
+      }
+    }
+  ]
+}

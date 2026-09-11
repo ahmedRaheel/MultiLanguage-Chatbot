@@ -14,8 +14,7 @@
     "typescript": "^5.9.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "lucide-react": "^0.542.0",
-    "keycloak-js": "^26.2.0"
+    "lucide-react": "^0.542.0"
   },
   "devDependencies": {
     "@types/react": "^19.1.0",

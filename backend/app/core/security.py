@@ -1,8 +1,7 @@
 from typing import Annotated
 
 import jwt
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi import Depends, HTTPException, Request, status
 from jwt import InvalidTokenError, PyJWKClient, PyJWKClientError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -12,17 +11,15 @@ from app.db.session import get_db
 from app.models.entities import User
 
 settings = get_settings()
-bearer_scheme = HTTPBearer(auto_error=True)
 jwks_client = PyJWKClient(settings.keycloak_jwks_url)
 
 
 def _extract_role(payload: dict) -> str:
-    realm_access = payload.get("realm_access") or {}
-    roles = set(realm_access.get("roles") or [])
+    roles = set((payload.get("realm_access") or {}).get("roles") or [])
     return "admin" if "admin" in roles else "user"
 
 
-def _decode_token(token: str) -> dict:
+def decode_token(token: str) -> dict:
     try:
         signing_key = jwks_client.get_signing_key_from_jwt(token)
         payload = jwt.decode(
@@ -35,29 +32,22 @@ def _decode_token(token: str) -> dict:
     except (InvalidTokenError, PyJWKClientError) as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired access token",
-            headers={"WWW-Authenticate": "Bearer"},
+            detail="Invalid or expired session",
         ) from exc
 
-    # Keycloak access tokens issued to the SPA carry the authorized party in azp.
     if payload.get("azp") != settings.keycloak_client_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Access token was not issued for this application",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token was not issued for this application")
 
     return payload
 
 
-def _sync_application_user(db: Session, payload: dict) -> User:
+def sync_application_user(db: Session, payload: dict) -> User:
     subject = str(payload["sub"])
     username = str(payload.get("preferred_username") or subject)
     email = payload.get("email")
     role = _extract_role(payload)
 
     user = db.scalar(select(User).where(User.keycloak_subject == subject))
-
     if user is None:
         user = User(
             keycloak_subject=subject,
@@ -79,17 +69,19 @@ def _sync_application_user(db: Session, payload: dict) -> User:
 
 
 async def get_current_user(
-    credentials: Annotated[HTTPAuthorizationCredentials, Depends(bearer_scheme)],
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
 ) -> User:
-    payload = _decode_token(credentials.credentials)
-    return _sync_application_user(db, payload)
+    token = request.cookies.get(settings.access_cookie_name)
+    if not token:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required")
+
+    payload = decode_token(token)
+    return sync_application_user(db, payload)
 
 
 def require_roles(*allowed_roles: str):
-    async def dependency(
-        user: Annotated[User, Depends(get_current_user)],
-    ) -> User:
+    async def dependency(user: Annotated[User, Depends(get_current_user)]) -> User:
         if user.role not in allowed_roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

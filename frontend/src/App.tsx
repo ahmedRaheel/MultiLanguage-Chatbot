@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { FormEvent } from "react";
 import {
   Bot,
   Database,
   FileText,
   LoaderCircle,
+  LogIn,
   LogOut,
   Mic,
   MicOff,
@@ -13,20 +15,24 @@ import {
   Sparkles,
   Trash2,
   Upload,
+  UserPlus,
   Volume2,
 } from "lucide-react";
+
 import {
   CurrentUser,
   deleteDocument,
   getCurrentUser,
   getDocuments,
   KnowledgeDocument,
+  login,
+  logout,
+  register,
   sendChat,
   Source,
   transcribeAudio,
   uploadDocument,
 } from "./api";
-import { logout } from "./auth";
 
 type UiMessage = {
   role: "user" | "assistant";
@@ -50,42 +56,141 @@ const languages = [
 export default function App() {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [authError, setAuthError] = useState("");
 
   useEffect(() => {
-    async function loadCurrentUser() {
-      try {
-        setCurrentUser(await getCurrentUser());
-      } catch (error) {
-        setAuthError((error as Error).message);
-      } finally {
-        setAuthLoading(false);
-      }
-    }
-
-    loadCurrentUser();
+    getCurrentUser()
+      .then(setCurrentUser)
+      .catch(() => setCurrentUser(null))
+      .finally(() => setAuthLoading(false));
   }, []);
 
   if (authLoading) {
     return (
       <div className="screen-loader">
         <LoaderCircle className="spin" size={28} />
-        <span>Opening your secure workspace…</span>
+        <span>Opening your workspace…</span>
       </div>
     );
   }
 
   if (!currentUser) {
-    return (
-      <div className="screen-loader">
-        <ShieldCheck size={28} />
-        <span>{authError || "Unable to load the authenticated user."}</span>
-        <button onClick={() => logout()}>Return to sign in</button>
-      </div>
-    );
+    return <AuthScreen onAuthenticated={setCurrentUser} />;
   }
 
-  return <ChatWorkspace currentUser={currentUser} onLogout={logout} />;
+  async function handleLogout() {
+    await logout();
+    setCurrentUser(null);
+  }
+
+  return <ChatWorkspace currentUser={currentUser} onLogout={handleLogout} />;
+}
+
+function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: CurrentUser) => void }) {
+  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (busy) return;
+
+    setBusy(true);
+    setError("");
+
+    try {
+      const user = mode === "login"
+        ? await login({ username, password })
+        : await register({
+            first_name: firstName,
+            last_name: lastName,
+            username,
+            email,
+            password,
+            confirm_password: confirmPassword,
+          });
+
+      onAuthenticated(user);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function switchMode(next: "login" | "signup") {
+    setMode(next);
+    setError("");
+    setPassword("");
+    setConfirmPassword("");
+  }
+
+  return (
+    <main className="auth-shell">
+      <section className="auth-hero">
+        <div className="hero-brand"><Sparkles size={22} /><strong>Nexa</strong></div>
+        <div>
+          <span className="eyebrow">PRIVATE MULTILINGUAL AI</span>
+          <h1>Your knowledge.<br />Your language.<br />One assistant.</h1>
+          <p>Chat with grounded organizational knowledge using text or voice. Keycloak protects identity behind the scenes while your users stay inside your branded experience.</p>
+        </div>
+        <div className="hero-security"><ShieldCheck size={18} /><span>Keycloak identity · HttpOnly sessions · PostgreSQL RAG + CAG</span></div>
+      </section>
+
+      <section className="auth-panel">
+        <div className="auth-card">
+          <div className="auth-tabs">
+            <button className={mode === "login" ? "active" : ""} onClick={() => switchMode("login")}><LogIn size={16} /> Login</button>
+            <button className={mode === "signup" ? "active" : ""} onClick={() => switchMode("signup")}><UserPlus size={16} /> Sign up</button>
+          </div>
+
+          <div className="auth-heading">
+            <h2>{mode === "login" ? "Welcome back" : "Create your account"}</h2>
+            <p>{mode === "login" ? "Sign in to continue to your AI workspace." : "New accounts are always created with the user role."}</p>
+          </div>
+
+          <form className="auth-form" onSubmit={submit}>
+            {mode === "signup" && (
+              <div className="auth-grid-two">
+                <label>First name<input value={firstName} onChange={(e) => setFirstName(e.target.value)} required /></label>
+                <label>Last name<input value={lastName} onChange={(e) => setLastName(e.target.value)} required /></label>
+              </div>
+            )}
+
+            <label>Username<input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required /></label>
+
+            {mode === "signup" && (
+              <label>Email<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required /></label>
+            )}
+
+            <label>Password<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={8} required /></label>
+
+            {mode === "signup" && (
+              <label>Confirm password<input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" minLength={8} required /></label>
+            )}
+
+            {error && <div className="login-error">{error}</div>}
+
+            <button className="auth-submit" type="submit" disabled={busy}>
+              {busy ? <LoaderCircle className="spin" size={18} /> : mode === "login" ? <LogIn size={18} /> : <UserPlus size={18} />}
+              {busy ? "Please wait…" : mode === "login" ? "Sign in" : "Create account"}
+            </button>
+          </form>
+
+          <p className="auth-switch">
+            {mode === "login" ? "New here?" : "Already have an account?"}{" "}
+            <button onClick={() => switchMode(mode === "login" ? "signup" : "login")}>{mode === "login" ? "Create an account" : "Sign in"}</button>
+          </p>
+        </div>
+      </section>
+    </main>
+  );
 }
 
 function ChatWorkspace({ currentUser, onLogout }: { currentUser: CurrentUser; onLogout: () => void }) {

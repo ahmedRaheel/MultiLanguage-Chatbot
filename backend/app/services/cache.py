@@ -1,16 +1,20 @@
 import json
 import re
 from datetime import datetime, timezone
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+
 from app.core.config import get_settings
 from app.models.entities import AnswerCache, KnowledgeState
 from app.services.ollama import embed_text
 
 settings = get_settings()
 
+
 def normalize_query(value: str) -> str:
     return re.sub(r"\s+", " ", value.strip().lower())
+
 
 def get_knowledge_version(db: Session) -> int:
     state = db.get(KnowledgeState, 1)
@@ -19,6 +23,7 @@ def get_knowledge_version(db: Session) -> int:
         db.add(state)
         db.flush()
     return state.version
+
 
 def bump_knowledge_version(db: Session) -> int:
     state = db.get(KnowledgeState, 1)
@@ -31,25 +36,7 @@ def bump_knowledge_version(db: Session) -> int:
     db.flush()
     return state.version
 
-async def save_cached_answer(
-    db: Session,
-    query: str,
-    answer: str,
-    sources: list[dict],
-    language: str | None,
-    use_knowledge_base: bool,
-) -> None:
-    db.add(
-        AnswerCache(
-            normalized_query=normalize_query(query),
-            query_embedding=await embed_text(query),
-            answer=answer,
-            sources_json=json.dumps(sources, default=str),
-            language=language,
-            use_knowledge_base=use_knowledge_base,
-            knowledge_version=get_knowledge_version(db),
-        )
-    )
+
 async def find_cached_answer(
     db: Session,
     query: str,
@@ -103,3 +90,24 @@ async def find_cached_answer(
     cached.last_used_at = datetime.now(timezone.utc)
     db.flush()
     return cached, similarity
+
+
+async def save_cached_answer(
+    db: Session,
+    query: str,
+    answer: str,
+    sources: list[dict],
+    language: str | None,
+    use_knowledge_base: bool,
+) -> None:
+    db.add(
+        AnswerCache(
+            normalized_query=normalize_query(query),
+            query_embedding=await embed_text(query),
+            answer=answer,
+            sources_json=json.dumps(sources, default=str),
+            language=language,
+            use_knowledge_base=use_knowledge_base,
+            knowledge_version=get_knowledge_version(db),
+        )
+    )
