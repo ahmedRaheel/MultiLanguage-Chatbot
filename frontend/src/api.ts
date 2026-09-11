@@ -1,5 +1,15 @@
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+import { getAccessToken } from "./auth";
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+
+export type UserRole = "admin" | "user";
+
+export type CurrentUser = {
+  id: string;
+  username: string;
+  role: UserRole;
+  is_active: boolean;
+};
 
 export type Source = {
   document_id: string;
@@ -14,6 +24,8 @@ export type ChatReply = {
   conversation_id: string;
   answer: string;
   sources: Source[];
+  cache_hit: boolean;
+  cache_similarity: number | null;
 };
 
 export type KnowledgeDocument = {
@@ -25,32 +37,39 @@ export type KnowledgeDocument = {
   created_at: string;
 };
 
-type TranscriptionResult = {
-  text: string;
-  language: string | null;
-};
+async function authenticatedHeaders(extra?: HeadersInit): Promise<HeadersInit> {
+  const token = await getAccessToken();
 
-async function ensureSuccessfulResponse(
-  response: Response,
-): Promise<Response> {
+  return {
+    Authorization: `Bearer ${token}`,
+    ...extra,
+  };
+}
+
+async function ensureSuccessfulResponse(response: Response): Promise<Response> {
   if (response.ok) {
     return response;
   }
 
-  let errorMessage = `Request failed with status ${response.status}`;
+  let message = `Request failed (${response.status})`;
 
   try {
-    const errorResponse = await response.json();
-
-    if (errorResponse.detail) {
-      errorMessage = errorResponse.detail;
-    }
+    const body = await response.json();
+    message = body.detail || message;
   } catch {
-    // Keep the default message if the response body
-    // does not contain valid JSON.
+    // Keep the status-based fallback message.
   }
 
-  throw new Error(errorMessage);
+  throw new Error(message);
+}
+
+export async function getCurrentUser(): Promise<CurrentUser> {
+  const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
+    headers: await authenticatedHeaders(),
+  });
+
+  await ensureSuccessfulResponse(response);
+  return response.json();
 }
 
 export async function sendChat(
@@ -61,9 +80,9 @@ export async function sendChat(
 ): Promise<ChatReply> {
   const response = await fetch(`${API_BASE_URL}/api/chat`, {
     method: "POST",
-    headers: {
+    headers: await authenticatedHeaders({
       "Content-Type": "application/json",
-    },
+    }),
     body: JSON.stringify({
       message,
       conversation_id: conversationId,
@@ -73,84 +92,58 @@ export async function sendChat(
   });
 
   await ensureSuccessfulResponse(response);
-
   return response.json();
 }
 
-export async function uploadDocument(
-  file: File,
-): Promise<KnowledgeDocument> {
+export async function uploadDocument(file: File): Promise<KnowledgeDocument> {
   const formData = new FormData();
-
   formData.append("file", file);
 
-  const response = await fetch(
-    `${API_BASE_URL}/api/documents`,
-    {
-      method: "POST",
-      body: formData,
-    },
-  );
+  const response = await fetch(`${API_BASE_URL}/api/documents`, {
+    method: "POST",
+    headers: await authenticatedHeaders(),
+    body: formData,
+  });
 
   await ensureSuccessfulResponse(response);
-
   return response.json();
 }
 
 export async function getDocuments(): Promise<KnowledgeDocument[]> {
-  const response = await fetch(
-    `${API_BASE_URL}/api/documents`,
-  );
+  const response = await fetch(`${API_BASE_URL}/api/documents`, {
+    headers: await authenticatedHeaders(),
+  });
 
   await ensureSuccessfulResponse(response);
-
   return response.json();
 }
 
-export async function deleteDocument(
-  documentId: string,
-): Promise<void> {
-  const response = await fetch(
-    `${API_BASE_URL}/api/documents/${documentId}`,
-    {
-      method: "DELETE",
-    },
-  );
+export async function deleteDocument(documentId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/documents/${documentId}`, {
+    method: "DELETE",
+    headers: await authenticatedHeaders(),
+  });
 
   await ensureSuccessfulResponse(response);
 }
 
 export async function transcribeAudio(
-  audioBlob: Blob,
+  blob: Blob,
   language: string,
-): Promise<TranscriptionResult> {
+): Promise<{ text: string; language: string | null }> {
   const formData = new FormData();
-
-  formData.append(
-    "file",
-    audioBlob,
-    "speech.webm",
-  );
+  formData.append("file", blob, "speech.webm");
 
   if (language) {
-    const languageCode = language.split("-")[0];
-
-    formData.append(
-      "language",
-      languageCode,
-    );
+    formData.append("language", language.split("-")[0]);
   }
 
-  const response = await fetch(
-    `${API_BASE_URL}/api/speech/transcribe`,
-    {
-      method: "POST",
-      body: formData,
-    },
-  );
+  const response = await fetch(`${API_BASE_URL}/api/speech/transcribe`, {
+    method: "POST",
+    headers: await authenticatedHeaders(),
+    body: formData,
+  });
 
   await ensureSuccessfulResponse(response);
-
   return response.json();
 }
-
