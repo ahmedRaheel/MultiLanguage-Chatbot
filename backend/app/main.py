@@ -1,18 +1,37 @@
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.models import entities  # noqa: F401
-from app.api.routes import router
+
+from app.api.auth_routes import router as auth_router
+from app.api.routes import router as api_router
 from app.core.config import get_settings
 from app.db.session import init_db
+from app.models import entities  # noqa: F401
 
 settings = get_settings()
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
     yield
 
-app = FastAPI(title="Multilingual RAG Chatbot API", version="1.0.0", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origin_list, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
-app.include_router(router)
+
+app = FastAPI(
+    title="Multilingual RAG + CAG Chatbot API",
+    version="3.0.0",
+    description="FastAPI resource server secured by Keycloak OpenID Connect.",
+    lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origin_list,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(auth_router)
+app.include_router(api_router)
