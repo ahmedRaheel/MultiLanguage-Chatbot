@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import VECTOR
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -14,14 +14,24 @@ settings = get_settings()
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        CheckConstraint("role IN ('admin', 'user')", name="ck_users_role"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    keycloak_subject: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
-    username: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
-    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    username: Mapped[str] = mapped_column(String(100), nullable=False)
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    first_name: Mapped[str | None] = mapped_column(String(100))
+    last_name: Mapped[str | None] = mapped_column(String(100))
     role: Mapped[str] = mapped_column(String(20), nullable=False, default="user")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, onupdate=func.now())
+
+
+Index("ux_users_username_ci", func.lower(User.username), unique=True)
+Index("ux_users_email_ci", func.lower(User.email), unique=True)
 
 
 class Document(Base):

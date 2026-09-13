@@ -1,8 +1,11 @@
-from typing import Annotated
+from datetime import datetime, timedelta, timezone
+from typing import Annotated, Literal
+from uuid import UUID
 
 import jwt
 from fastapi import Depends, HTTPException, Request, status
-from jwt import InvalidTokenError, PyJWKClient, PyJWKClientError
+from jwt import InvalidTokenError
+from pwdlib import PasswordHash
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -11,73 +14,78 @@ from app.db.session import get_db
 from app.models.entities import User
 
 settings = get_settings()
-jwks_client = PyJWKClient(settings.keycloak_jwks_url)
+password_hasher = PasswordHash.recommended()
 
 
-def _extract_role(payload: dict) -> str:
-    roles = set((payload.get("realm_access") or {}).get("roles") or [])
-    return "admin" if "admin" in roles else "user"
+def hash_password(password: str) -> str:
+    return password_hasher.hash(password)
 
 
-def decode_token(token: str) -> dict:
+def verify_password(password: str, password_hash: str) -> bool:
     try:
-        signing_key = jwks_client.get_signing_key_from_jwt(token)
-        payload = jwt.decode(
-            token,
-            signing_key.key,
-            algorithms=["RS256"],
-            issuer=settings.keycloak_issuer,
-            options={"verify_aud": False},
-        )
-    except (InvalidTokenError, PyJWKClientError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired session",
-        ) from exc
+        return password_hasher.verify(password, password_hash)
+    except Exception:
+        return False
 
-    if payload.get("azp") != settings.keycloak_client_id:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token was not issued for this application")
 
+def create_token(user: User, token_type: Literal["access", "refresh"]) -> str:
+    now = datetime.now(timezone.utc)
+    expires = (
+        now + timedelta(minutes=settings.access_token_minutes)
+        if token_type == "access"
+        else now + timedelta(days=settings.refresh_token_days)
+    )
+    payload = {
+        "sub": str(user.id),
+        "username": user.username,
+        "role": user.role,
+        "type": token_type,
+        "iat": now,
+        "exp": expires,
+    }
+    return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+
+def decode_token(token: str, expected_type: Literal["access", "refresh"]) -> dict:
+    try:
+        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+    except InvalidTokenError as exc:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired session") from exc
+
+    if payload.get("type") != expected_type or not payload.get("sub"):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid session token")
     return payload
 
 
-def sync_application_user(db: Session, payload: dict) -> User:
-    subject = str(payload["sub"])
-    username = str(payload.get("preferred_username") or subject)
-    email = payload.get("email")
-    role = _extract_role(payload)
+def _read_access_token(request: Request) -> str | None:
+    token = request.cookies.get(settings.access_cookie_name)
+    if token:
+        return token
 
-    user = db.scalar(select(User).where(User.keycloak_subject == subject))
-    if user is None:
-        user = User(
-            keycloak_subject=subject,
-            username=username,
-            email=email,
-            role=role,
-            is_active=True,
-        )
-        db.add(user)
-    else:
-        user.username = username
-        user.email = email
-        user.role = role
-        user.is_active = True
-
-    db.commit()
-    db.refresh(user)
-    return user
+    authorization = request.headers.get("Authorization", "")
+    if authorization.lower().startswith("bearer "):
+        return authorization[7:].strip()
+    return None
 
 
 async def get_current_user(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
 ) -> User:
-    token = request.cookies.get(settings.access_cookie_name)
+    token = _read_access_token(request)
     if not token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required")
 
-    payload = decode_token(token)
-    return sync_application_user(db, payload)
+    payload = decode_token(token, "access")
+    try:
+        user_id = UUID(str(payload["sub"]))
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid session token") from exc
+
+    user = db.scalar(select(User).where(User.id == user_id))
+    if user is None or not user.is_active:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User account is unavailable")
+    return user
 
 
 def require_roles(*allowed_roles: str):

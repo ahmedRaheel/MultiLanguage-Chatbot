@@ -138,9 +138,9 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: CurrentUser) 
         <div>
           <span className="eyebrow">PRIVATE MULTILINGUAL AI</span>
           <h1>Your knowledge.<br />Your language.<br />One assistant.</h1>
-          <p>Chat with grounded organizational knowledge using text or voice. Keycloak protects identity behind the scenes while your users stay inside your branded experience.</p>
+          <p>Chat with grounded organizational knowledge using text or voice. Your account and secure session stay inside the application experience.</p>
         </div>
-        <div className="hero-security"><ShieldCheck size={18} /><span>Keycloak identity · HttpOnly sessions · PostgreSQL RAG + CAG</span></div>
+        <div className="hero-security"><ShieldCheck size={18} /><span>PostgreSQL identity · HttpOnly sessions · PostgreSQL RAG + CAG</span></div>
       </section>
 
       <section className="auth-panel">
@@ -399,8 +399,8 @@ function ChatWorkspace({ currentUser, onLogout }: { currentUser: CurrentUser; on
         <div className="permission-card">
           <ShieldCheck size={17} />
           <div>
-            <strong>OAuth2 protected</strong>
-            <span>JWT bearer + server-side RBAC</span>
+            <strong>Secure session</strong>
+            <span>HttpOnly JWT + server-side RBAC</span>
           </div>
         </div>
 

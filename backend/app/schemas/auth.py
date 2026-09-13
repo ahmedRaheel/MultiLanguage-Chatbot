@@ -25,6 +25,8 @@ class RegisterRequest(BaseModel):
 
 
 class AdminCreateUserRequest(BaseModel):
+    first_name: str | None = Field(default=None, max_length=100)
+    last_name: str | None = Field(default=None, max_length=100)
     username: str = Field(min_length=3, max_length=100)
     email: EmailStr
     password: str = Field(min_length=8, max_length=200)
@@ -34,6 +36,9 @@ class AdminCreateUserRequest(BaseModel):
 class CurrentUserResponse(BaseModel):
     id: UUID
     username: str
+    email: str
+    first_name: str | None
+    last_name: str | None
     role: Literal["admin", "user"]
     is_active: bool
 

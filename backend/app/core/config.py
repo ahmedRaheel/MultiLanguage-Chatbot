@@ -17,16 +17,19 @@ class Settings(BaseSettings):
     max_upload_mb: int = 25
     cache_similarity_threshold: float = 0.94
 
-    keycloak_public_url: str = "http://localhost:8080"
-    keycloak_internal_url: str = "http://localhost:8080"
-    keycloak_realm: str = "polyglot"
-    keycloak_client_id: str = "polyglot-bff"
-    keycloak_client_secret: str = "change-this-bff-secret"
+    jwt_secret_key: str = "change-this-development-secret-to-a-long-random-value"
+    jwt_algorithm: str = "HS256"
+    access_token_minutes: int = 15
+    refresh_token_days: int = 7
 
-    access_cookie_name: str = "polyglot_access"
-    refresh_cookie_name: str = "polyglot_refresh"
+    access_cookie_name: str = "chatbot_access"
+    refresh_cookie_name: str = "chatbot_refresh"
     cookie_secure: bool = False
     cookie_samesite: str = "lax"
+
+    admin_username: str = "admin"
+    admin_email: str = "admin@chatbot.local"
+    admin_password: str = "ChangeMe123!"
 
     cors_origins: str = "http://localhost:5173"
 
@@ -35,34 +38,6 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
-
-    @property
-    def keycloak_issuer(self) -> str:
-        return f"{self.keycloak_public_url.rstrip('/')}/realms/{self.keycloak_realm}"
-
-    @property
-    def keycloak_realm_url(self) -> str:
-        return f"{self.keycloak_internal_url.rstrip('/')}/realms/{self.keycloak_realm}"
-
-    @property
-    def keycloak_token_url(self) -> str:
-        return f"{self.keycloak_realm_url}/protocol/openid-connect/token"
-
-    @property
-    def keycloak_logout_url(self) -> str:
-        return f"{self.keycloak_realm_url}/protocol/openid-connect/logout"
-
-    @property
-    def keycloak_jwks_url(self) -> str:
-        return f"{self.keycloak_realm_url}/protocol/openid-connect/certs"
-
-    @property
-    def keycloak_admin_users_url(self) -> str:
-        return f"{self.keycloak_internal_url.rstrip('/')}/admin/realms/{self.keycloak_realm}/users"
-
-    @property
-    def keycloak_admin_roles_url(self) -> str:
-        return f"{self.keycloak_internal_url.rstrip('/')}/admin/realms/{self.keycloak_realm}/roles"
 
 
 @lru_cache

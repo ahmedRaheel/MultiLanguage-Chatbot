@@ -20,8 +20,8 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="Multilingual RAG + CAG Chatbot API",
-    version="3.0.0",
-    description="FastAPI resource server secured by Keycloak OpenID Connect.",
+    version="6.0.0",
+    description="FastAPI chatbot with PostgreSQL authentication, JWT sessions, RBAC, RAG and CAG.",
     lifespan=lifespan,
 )
 

@@ -277,7 +277,7 @@ button:focus-visible, textarea:focus-visible, select:focus-visible, label:focus-
   .message-list { padding-top: 20px; }
 }
 
-/* Secure OAuth2 / RBAC workspace additions */
+/* Secure authentication / RBAC workspace additions */
 html,
 body,
 #root {

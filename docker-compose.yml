@@ -1,62 +1,40 @@
-
 services:
-  keycloak:
-    image: quay.io/keycloak/keycloak:26.7.3
-
-    command:
-      - start-dev
-      - --import-realm
-
-    environment:
-      KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
-      KC_DB_USERNAME: keycloak
-      KC_DB_PASSWORD: keycloak123
-
-      KC_BOOTSTRAP_ADMIN_USERNAME: keycloakadmin
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ChangeMe123!
-
-    ports:
-      - "8080:8080"
-
-    volumes:
-      - ./keycloak:/opt/keycloak/data/import
-
-    networks:
-      - chatbot-network
-
   backend:
     build:
       context: ./backend
 
     environment:
-      DATABASE_URL: postgresql+psycopg://postgres:postgres123@postgres:5432/chatbot
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql+psycopg://postgres:postgres123@postgres:5432/chatbot}
 
-      OLLAMA_BASE_URL: http://host.docker.internal:11434
-      OLLAMA_CHAT_MODEL: llama3.2:3b
-      OLLAMA_EMBED_MODEL: all-minilm
-      EMBEDDING_DIMENSION: 384
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-this-development-secret-to-a-long-random-value}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      ACCESS_TOKEN_MINUTES: ${ACCESS_TOKEN_MINUTES:-15}
+      REFRESH_TOKEN_DAYS: ${REFRESH_TOKEN_DAYS:-7}
 
-      TOP_K: 5
-      CHUNK_SIZE: 1200
-      CHUNK_OVERLAP: 200
-      MAX_UPLOAD_MB: 25
-      CACHE_SIMILARITY_THRESHOLD: 0.94
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@chatbot.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-ChangeMe123!}
 
-      KEYCLOAK_PUBLIC_URL: http://localhost:8080
-      KEYCLOAK_INTERNAL_URL: http://keycloak:8080
-      KEYCLOAK_REALM: polyglot
+      OLLAMA_BASE_URL: ${DOCKER_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-llama3.2:3b}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-all-minilm}
+      EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-384}
 
-      CORS_ORIGINS: http://localhost:5173
+      TOP_K: ${TOP_K:-5}
+      CHUNK_SIZE: ${CHUNK_SIZE:-1200}
+      CHUNK_OVERLAP: ${CHUNK_OVERLAP:-200}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-25}
+      CACHE_SIMILARITY_THRESHOLD: ${CACHE_SIMILARITY_THRESHOLD:-0.94}
+
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
 
     ports:
       - "8000:8000"
 
     extra_hosts:
       - "host.docker.internal:host-gateway"
-
-    depends_on:
-      - keycloak
 
     networks:
       - chatbot-network
@@ -65,7 +43,7 @@ services:
     build:
       context: ./frontend
       args:
-        VITE_API_BASE_URL: http://localhost:8000
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
 
     ports:
       - "5173:80"
@@ -76,8 +54,6 @@ services:
     networks:
       - chatbot-network
 
-
 networks:
   chatbot-network:
     external: true
-

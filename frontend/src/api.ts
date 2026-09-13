@@ -5,6 +5,9 @@ export type UserRole = "admin" | "user";
 export type CurrentUser = {
   id: string;
   username: string;
+  email: string;
+  first_name: string | null;
+  last_name: string | null;
   role: UserRole;
   is_active: boolean;
 };
